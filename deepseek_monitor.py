@@ -145,14 +145,13 @@ class ChartWidget(QWidget):
             y_val = min_v + (max_v - min_v) * (1 - i / n_labels)
             y_pos = pad_t + chart_h * (i / n_labels)
             label = ""
-            if y_val >= 1_000_000:
-                label = f"{y_val/1_000_000:.1f}M"
-            elif y_val >= 1_000:
-                label = f"{y_val/1_000:.0f}K"
+            if y_val >= 100_000_000:
+                label = f"{y_val/100_000_000:.2f}亿"
+            elif y_val >= 10_000:
+                label = f"{y_val/10_000:.1f}万"
             else:
                 label = f"{y_val:.0f}"
             p.setPen(QColor(TEXT_MUTED))
-            fm = QFontMetrics(p.font())
             p.drawText(QRectF(2, y_pos - 7, pad_l - 8, 14), Qt.AlignRight | Qt.AlignVCenter, label)
             if i > 0:
                 p.setPen(QPen(QColor(BORDER), 1))
@@ -187,14 +186,14 @@ class ChartWidget(QWidget):
             # Value label above bar
             p.setPen(QPen(QColor(ACCENT_BLUE), 1.5))
             p.setFont(QFont("sans-serif", 9, QFont.Bold))
-            fm = QFontMetrics(p.font())
             vlabel = ""
-            if v >= 1_000_000:
-                vlabel = f"{v/1_000_000:.1f}M"
-            elif v >= 1_000:
-                vlabel = f"{v/1_000:.1f}K"
+            if v >= 100_000_000:
+                vlabel = f"{v/100_000_000:.2f}亿"
+            elif v >= 10_000:
+                vlabel = f"{v/10_000:.1f}万"
             else:
                 vlabel = f"{v:.0f}"
+            fm = QFontMetrics(p.font())
             vl_w = fm.width(vlabel)
             p.drawText(QRectF(x + bar_w/2 - vl_w/2, y - 18, vl_w, 16), Qt.AlignCenter, vlabel)
 
@@ -210,10 +209,19 @@ class ChartWidget(QWidget):
 
 
 class ModelCard(QFrame):
-    def __init__(self, name, cost, tokens, progress):
+    def __init__(self, name, cost, inp_tokens, out_tokens, progress):
         super().__init__()
+        capped = min(progress, 1.0)
+        pct = capped * 100
+        if pct >= 80:
+            bar_color = "#f38ba8"
+        elif pct >= 50:
+            bar_color = "#f5a97f"
+        else:
+            bar_color = ACCENT_BLUE
+
         self.setStyleSheet(f"""
-            ModelCard {{ background: {CARD}; border-radius: 10px; padding: 12px; }}
+            ModelCard {{ background: {CARD}; border-radius: 10px; }}
             ModelCard:hover {{ background: {CARD_HOVER}; }}
         """)
         layout = QVBoxLayout(self)
@@ -230,7 +238,21 @@ class ModelCard(QFrame):
         row.addWidget(c)
         layout.addLayout(row)
 
-        bar_row = QHBoxLayout()
+        mid = QHBoxLayout()
+        cl = QLabel(f"¥{cost} / ¥50")
+        cl.setStyleSheet(f"font-size: 10px; font-weight: bold; color: {TEXT_SECONDARY};")
+        mid.addWidget(cl)
+        mid.addStretch()
+        pl = QLabel(f"{pct:.1f}%")
+        if pct >= 80:
+            pl.setStyleSheet(f"font-size: 10px; font-weight: bold; color: #f38ba8;")
+        elif pct >= 50:
+            pl.setStyleSheet(f"font-size: 10px; font-weight: bold; color: #f5a97f;")
+        else:
+            pl.setStyleSheet(f"font-size: 10px; font-weight: bold; color: {ACCENT_BLUE};")
+        mid.addWidget(pl)
+        layout.addLayout(mid)
+
         bar_container = QWidget()
         bar_container.setFixedHeight(8)
         bar_container.setStyleSheet(f"background: {BORDER}; border-radius: 4px;")
@@ -241,16 +263,25 @@ class ModelCard(QFrame):
         fill.setFixedHeight(8)
         fill.setStyleSheet(f"""
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 {ACCENT_BLUE}, stop:1 #b4befe);
+                stop:0 {bar_color}, stop:1 #b4befe);
             border-radius: 4px;
         """)
         bar_layout.addWidget(fill)
         bar_layout.addStretch()
-        bar_row.addWidget(bar_container, 1)
-        t = QLabel(tokens)
-        t.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED};")
-        bar_row.addWidget(t)
-        layout.addLayout(bar_row)
+        layout.addWidget(bar_container)
+
+        info = QHBoxLayout()
+        inp = QLabel(f"输入 {inp_tokens}")
+        inp.setStyleSheet(f"font-size: 10px; color: {TEXT_SECONDARY};")
+        info.addWidget(inp)
+        dot = QLabel("·")
+        dot.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED};")
+        info.addWidget(dot)
+        out = QLabel(f"输出 {out_tokens}")
+        out.setStyleSheet(f"font-size: 10px; color: {TEXT_SECONDARY};")
+        info.addWidget(out)
+        info.addStretch()
+        layout.addLayout(info)
 
 
 class DeepSeekMonitor(QWidget):
@@ -464,18 +495,27 @@ class DeepSeekMonitor(QWidget):
             w = self.model_container.itemAt(i).widget()
             if w: w.setParent(None)
 
-        cap = 100_000_000.0
+        items = []
         for item in ct:
             raw = item.get("model", "")
             cv = sum(float(u.get("amount", 0)) for u in item.get("usage", []))
             if cv <= 0: continue
             mt = next((x for x in at if x.get("model") == raw), {})
-            ts = sum(float(u.get("amount", 0)) for u in mt.get("usage", [])
-                     if "TOKEN" in u.get("type", "").upper())
+            inp = sum(float(u.get("amount", 0)) for u in mt.get("usage", [])
+                      if "PROMPT" in u.get("type", "").upper())
+            out = sum(float(u.get("amount", 0)) for u in mt.get("usage", [])
+                       if "RESPONSE" in u.get("type", "").upper())
+            items.append((raw, cv, inp, out))
+
+        if not items:
+            return
+        items.sort(key=lambda x: x[1], reverse=True)
+        for raw, cv, inp, out in items:
             dn = raw.replace("deepseek-", "").title()
             if raw == "deepseek-v4-pro": dn = "DeepSeek-V4-Pro"
             elif raw == "deepseek-v4-flash": dn = "DeepSeek-V4-Flash"
-            mc = ModelCard(dn, f"{cv:.2f}", f"{self.fmt(ts)}/100M", ts / cap)
+            mc = ModelCard(dn, f"{cv:.2f}", self.fmt(inp), self.fmt(out),
+                           cv / 50.0)
             self.model_container.addWidget(mc)
 
         cd = cb.get("days", [])
@@ -496,8 +536,8 @@ class DeepSeekMonitor(QWidget):
         self.update_label.setText(datetime.now().strftime("更新于 %H:%M"))
 
     def fmt(self, v):
-        if v >= 1_000_000: return f"{v/1_000_000:.1f}M"
-        if v >= 1_000: return f"{v/1_000:.1f}K"
+        if v >= 100_000_000: return f"{v/100_000_000:.2f}亿"
+        if v >= 10_000: return f"{v/10_000:.1f}万"
         return f"{v:.0f}"
 
 
