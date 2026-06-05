@@ -14,7 +14,7 @@ from PyQt5.QtGui import (
 )
 from PyQt5.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QWidget, QVBoxLayout,
-    QHBoxLayout, QLabel, QPushButton, QFrame, QScrollArea,
+    QHBoxLayout, QLabel, QPushButton, QFrame,
     QMessageBox, QAction, QSizePolicy
 )
 
@@ -368,22 +368,7 @@ class DeepSeekMonitor(QWidget):
         self.model_container = QVBoxLayout()
         self.model_container.setSpacing(6)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setMinimumHeight(100)
-        scroll.setStyleSheet(
-            "QScrollArea { border: none; background: transparent; }"
-            f"QScrollBar:vertical {{ background: {BG}; width: 6px; }}"
-            f"QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: 3px; min-height: 20px; }}"
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        )
-        sw = QWidget()
-        sw.setStyleSheet("background: transparent;")
-        sw.setLayout(self.model_container)
-        scroll.setWidget(sw)
-        layout.addWidget(scroll, 1)
+        layout.addLayout(self.model_container)
 
         # ── Section: 消耗趋势 ──
         sec2 = QLabel("消耗趋势")
@@ -478,7 +463,7 @@ class DeepSeekMonitor(QWidget):
         cny_w = next((w for w in wallets if w.get("currency") == "CNY"), {})
         cny_c = next((c for c in costs if c.get("currency") == "CNY"), {})
         bal = math.floor(float(cny_w.get("balance", 0)) * 100) / 100
-        mon = math.floor(float(cny_c.get("amount", 0)) * 100) / 100
+        mon = float(cny_c.get("amount", 0))
         self.balance_val.setText(f"¥ {bal:.2f}")
         self.monthly_val.setText(f"¥ {mon:.2f}")
 
@@ -496,10 +481,11 @@ class DeepSeekMonitor(QWidget):
             if w: w.setParent(None)
 
         items = []
+        allowed = {"deepseek-v4-pro", "deepseek-v4-flash"}
         for item in ct:
             raw = item.get("model", "")
+            if raw not in allowed: continue
             cv = sum(float(u.get("amount", 0)) for u in item.get("usage", []))
-            if cv <= 0: continue
             mt = next((x for x in at if x.get("model") == raw), {})
             inp = sum(float(u.get("amount", 0)) for u in mt.get("usage", [])
                       if "PROMPT" in u.get("type", "").upper())
@@ -524,7 +510,7 @@ class DeepSeekMonitor(QWidget):
                  for m in d.get("data", []) for u in m.get("usage", [])) > 0]
         valid = valid[-7:]
         if valid:
-            days = [d.get("date", "")[-2:] for d in valid]
+            days = [d.get("date", "")[-5:] for d in valid]
             vals = []
             for d in valid:
                 am = next((x for x in ad if x.get("date") == d.get("date")), {})
@@ -533,7 +519,7 @@ class DeepSeekMonitor(QWidget):
                 vals.append(tv)
             self.chart.set_data(days, vals)
 
-        self.update_label.setText(datetime.now().strftime("更新于 %H:%M"))
+        self.update_label.setText(datetime.now().strftime("更新于 %m/%d %H:%M"))
 
     def fmt(self, v):
         if v >= 100_000_000: return f"{v/100_000_000:.2f}亿"
