@@ -424,7 +424,7 @@ class DeepSeekMonitor(QWidget):
     def do_request(self, url):
         h = {"Cookie": conf.cookie, "Authorization": conf.token,
              "User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-        r = requests.get(url, headers=h, timeout=30)
+        r = requests.get(url, headers=h, timeout=30, proxies={"http": "", "https": ""})
         r.raise_for_status()
         return r.json()
 
