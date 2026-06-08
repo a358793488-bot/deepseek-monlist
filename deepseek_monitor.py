@@ -288,7 +288,6 @@ class DeepSeekMonitor(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DeepSeek Monitor")
-        self.setWindowOpacity(0.88)
         self.setMinimumSize(400, 540)
         self.resize(420, 600)
         self.setStyleSheet(f"DeepSeekMonitor {{ background: {BG}; }}")
@@ -425,7 +424,7 @@ class DeepSeekMonitor(QWidget):
     def do_request(self, url):
         h = {"Cookie": conf.cookie, "Authorization": conf.token,
              "User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-        r = requests.get(url, headers=h, timeout=30, proxies={"http": "", "https": ""})
+        r = requests.get(url, headers=h, timeout=30)
         r.raise_for_status()
         return r.json()
 
